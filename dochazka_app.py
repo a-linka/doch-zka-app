@@ -7,6 +7,8 @@ import ttkbootstrap as tb
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+import sys
+import ctypes
 
 import hashlib as _hashlib
 _original_md5 = _hashlib.md5
@@ -14,6 +16,14 @@ def _reportlab_compatible_md5(*args, **kwargs):
     kwargs.pop("usedforsecurity", None)
     return _original_md5(*args, **kwargs)
 _hashlib.md5 = _reportlab_compatible_md5
+
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 APP_NAME = "Docházka MOP"
 APP_VERSION = "0.5.1"
@@ -321,7 +331,17 @@ class AttendanceApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
-        self.geometry("1440x920")
+        screen_width = self.winfo_screenwidth()
+
+        screen_height = self.winfo_screenheight()
+        app_width = int(screen_width * 0.8)
+        app_height = int(screen_height * 0.8)
+        
+        x_position = int((screen_width / 2) - (app_width / 2))
+        y_position = int((screen_height / 2) - (app_height / 2))
+        
+        self.geometry(f"{app_width}x{app_height}+{x_position}+{y_position}")
+        
         self.minsize(1180, 750)
         self.db = Database(str(Path.home() / "Dochazka_MOP.sqlite3"))
         self.settings = self.db.get_settings()
