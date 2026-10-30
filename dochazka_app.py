@@ -98,7 +98,6 @@ def parse_time(value):
     return None
 
 def normalize_time(value):
-    """Zkusí z '800', '8.00', '8,30', '815', '15' udělat 'HH:MM'. Když si není jistá, vrátí původní text."""
     s = (value or "").strip().replace(",", ":").replace(".", ":").replace(" ", "")
     if not s:
         return ""
@@ -121,10 +120,7 @@ def normalize_time(value):
     return f"{h:02d}:{m:02d}"
 
 def validate_times(od_s, do_s, po_s, pd_s):
-    """
-    Vrátí (ok, err_msg, invalid_fields).
-    invalid_fields obsahuje názvy políček ('od', 'do', 'po', 'pd'), ve kterých je chyba.
-    """
+  
     od_s, do_s, po_s, pd_s = [(s or "").strip() for s in (od_s, do_s, po_s, pd_s)]
     
     if not any((od_s, do_s, po_s, pd_s)):
@@ -274,7 +270,6 @@ class Database:
         return row[0]
 
     def archive_employee(self, employee):
-        """Přesune záznamy místa do skrytého čísla (v aplikaci se nezobrazí, v databázi zůstanou)."""
         with self.con:
             row = self.con.execute("SELECT COALESCE(MAX(employee), 0) FROM attendance").fetchone()
             new_id = max(100, row[0] + 1)
@@ -369,7 +364,6 @@ class AttendanceApp(tk.Tk):
             self.bind_all(seq, self._on_mousewheel, add="+")
 
     def _on_mousewheel(self, event):
-        """Kolečko myši posouvá tabulku (a rekapitulaci), nad kterou je kurzor; Shift = vodorovně."""
         try:
             w = self.winfo_containing(event.x_root, event.y_root)
         except Exception:
@@ -693,11 +687,9 @@ class AttendanceApp(tk.Tk):
                     if refresh:
                         self._schedule_summary()
 
-                # Časy se píšou znak po znaku: kontrola a uložení se spustí až chvilku po
-                # posledním znaku, nebo ihned při odchodu z políčka, přepnutí měsíce,
-                # exportu a zavření aplikace (viz _flush_pending).
+
                 def schedule_update(*_a, k=key, upd=update):
-                    if self._updating:      # změnu provedla sama update(), není co ukládat znovu
+                    if self._updating:      
                         return
                     self._cancel_pending(k)
                     def fire(k=k, upd=upd):
@@ -745,8 +737,7 @@ class AttendanceApp(tk.Tk):
         self._update_summary(month)
 
     def _make_sticky_header(self, canvas, inner, header_pairs, hs):
-        """Jméno a názvy sloupců zůstávají nahoře, i když se tabulka posune dolů.
-        Kopie štítků leží přímo na plátně a drží se na místě; vodorovně se posouvají s tabulkou."""
+
         backing = tk.Frame(canvas, bg=self.c_surface)
         overlays = [(real, tk.Label(canvas, **spec)) for real, spec in header_pairs]
 
@@ -778,7 +769,7 @@ class AttendanceApp(tk.Tk):
         return item
 
     def _flush_pending(self, key=None):
-        """Okamžitě dokončí rozepsaná uložení (jedno konkrétní, nebo všechna)."""
+
         keys = [key] if key is not None else list(self._pending)
         for k in keys:
             item = self._cancel_pending(k)
@@ -787,7 +778,7 @@ class AttendanceApp(tk.Tk):
                 except tk.TclError: pass
 
     def _on_time_leave(self, var, key):
-        """Při odchodu z políčka: ' 800' -> '08:00' a okamžité uložení."""
+
         normalized = normalize_time(var.get())
         if normalized != var.get():
             var.set(normalized)
@@ -1022,7 +1013,6 @@ class AttendanceApp(tk.Tk):
         return errors, missing
 
     def _confirm_export(self, months):
-        """Vrátí True, když se má export provést (žádný problém, nebo uživatel potvrdil)."""
         self._flush_pending()
         errors, missing = self._collect_export_issues(months)
         if not errors and not missing:
