@@ -1227,7 +1227,9 @@ class AttendanceApp(tk.Tk):
     def export_pdf(self):
         month=self.month_var.get()
         if not self._confirm_export([month]): return
-        path=filedialog.asksaveasfilename(defaultextension=".pdf",initialfile=f"Dochazka_{self.year}_{month:02d}.pdf",filetypes=[("PDF", "*.pdf")])
+        center=self.settings.get("center","").strip()
+        store=self.settings.get("store","").strip()
+        path=filedialog.asksaveasfilename(defaultextension=".pdf",initialfile=f"{center}_{store}_dochazka_{self.year}_{month:02d}.pdf",filetypes=[("PDF", "*.pdf")])
         if not path: return
         try: self._make_pdf(path,[month])
         except Exception as e: messagebox.showerror("Chyba exportu", f"PDF se nepodařilo vytvořit:\n{e}")
@@ -1235,7 +1237,9 @@ class AttendanceApp(tk.Tk):
 
     def export_year_pdf(self):
         if not self._confirm_export(list(range(1,13))): return
-        path=filedialog.asksaveasfilename(defaultextension=".pdf",initialfile=f"Dochazka_{self.year}_rok.pdf",filetypes=[("PDF", "*.pdf")])
+        center=self.settings.get("center","").strip()
+        store=self.settings.get("store","").strip()
+        path=filedialog.asksaveasfilename(defaultextension=".pdf",initialfile=f"{center}_{store}_dochazka_{self.year}_rok.pdf",filetypes=[("PDF", "*.pdf")])
         if not path: return
         try: self._make_pdf(path,list(range(1,13)))
         except Exception as e: messagebox.showerror("Chyba exportu", f"PDF se nepodařilo vytvořit:\n{e}")
