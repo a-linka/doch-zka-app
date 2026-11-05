@@ -1,0 +1,2 @@
+ttkbootstrap==2.2.6
+reportlab==5.1.0

@@ -7,7 +7,6 @@ import ttkbootstrap as tb
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-import sys
 import ctypes
 
 import hashlib as _hashlib
