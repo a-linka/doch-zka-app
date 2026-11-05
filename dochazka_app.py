@@ -25,7 +25,7 @@ except Exception:
         pass
 
 APP_NAME = "Docházka MOP"
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.5.3"
 
 DEFAULT_YEAR = 2026
 
