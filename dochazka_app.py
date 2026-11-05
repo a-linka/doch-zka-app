@@ -25,7 +25,7 @@ except Exception:
         pass
 
 APP_NAME = "Docházka MOP"
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 DEFAULT_YEAR = 2027
 CODES = {
     "": "Práce / čas",
