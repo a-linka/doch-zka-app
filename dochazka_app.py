@@ -1,6 +1,7 @@
 import calendar
 import json
 import os
+import sys
 import sqlite3
 import tkinter as tk
 import ttkbootstrap as tb
@@ -26,7 +27,7 @@ except Exception:
         pass
 
 APP_NAME = "Docházka MOP"
-APP_VERSION = "0.5.6"
+APP_VERSION = "0.5.7"
 UPDATE_REPO = "a-linka/doch-zka-app"
 
 DEFAULT_YEAR = 2026
@@ -326,9 +327,19 @@ class Database:
         self.con.close()
 
 class AttendanceApp(tk.Tk):
+    
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME} {APP_VERSION}")
+        def resource_path(relative_path):
+                try:
+                    base_path = sys._MEIPASS
+                except Exception:
+                    base_path = os.path.abspath(".")
+                return os.path.join(base_path, relative_path)
+        icon_path = resource_path("icon.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
         screen_width = self.winfo_screenwidth()
 
         screen_height = self.winfo_screenheight()
