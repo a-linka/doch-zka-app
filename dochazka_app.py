@@ -8,8 +8,9 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import ctypes
-
 import hashlib as _hashlib
+from update_check import UpdateNotifier
+
 _original_md5 = _hashlib.md5
 def _reportlab_compatible_md5(*args, **kwargs):
     kwargs.pop("usedforsecurity", None)
@@ -26,6 +27,7 @@ except Exception:
 
 APP_NAME = "Docházka MOP"
 APP_VERSION = "0.5.3"
+UPDATE_REPO = "a-linka/doch-zka-app"
 
 DEFAULT_YEAR = 2026
 
@@ -359,6 +361,7 @@ class AttendanceApp(tk.Tk):
         self._build_summary()
         self._load_month(rebuild_summary=False)
         self.notebook.select(self.month_var.get() - 1)
+        self.update_notifier = UpdateNotifier(self, UPDATE_REPO, APP_VERSION, before=self.notebook)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.bind_all("<Button-1>", self._maybe_close_popup_on_outside_click, add="+")
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):     # Button-4/5 = Linux
@@ -434,6 +437,7 @@ class AttendanceApp(tk.Tk):
         menubar.add_cascade(label="Soubor", menu=filem)
         helpm = tk.Menu(menubar, tearoff=False)
         helpm.add_command(label="Kódy", command=self.show_codes)
+        helpm.add_command(label="Zkontrolovat novou verzi", command=lambda: self.update_notifier.check(manual=True))
         menubar.add_cascade(label="Nápověda", menu=helpm)
         self.config(menu=menubar)
 
