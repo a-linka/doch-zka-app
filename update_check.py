@@ -122,7 +122,7 @@ class UpdateNotifier:
         bg, fg = "#fff3cd", "#664d03"
         banner = tk.Frame(self.root, bg=bg, highlightbackground="#ffe69c", highlightthickness=1)
         text = (f"Je dostupná nová verze {self._clean(info['version'])} (používáte {self.current}). "
-                "Po stažení Docházku zavřete a stažený soubor starý DochazkaMOP.exe přesuňte na plochu a nechte nahradit starý soubor.")
+                "Po stažení Docházku zavřete a stažený soubor DochazkaMOP.exe přesuňte na plochu (tam kde máte docházku teď) a nechte nahradit starý soubor.")
         tk.Label(banner, text=text, bg=bg, fg=fg, font=("Segoe UI", 10), anchor="w",
                  justify="left", wraplength=880).pack(side="left", padx=12, pady=8)
         ttk.Button(banner, text="Skrýt", command=self.hide_banner).pack(side="right", padx=(0, 12), pady=6)
