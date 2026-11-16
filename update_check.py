@@ -3,8 +3,10 @@
 - Při startu se na pozadí zeptá GitHubu na poslední vydání. Když je novější než APP_VERSION,
   ukáže se pod záhlavím žlutý pruh.
 - V `.exe` (Windows), které leží ve složce s právem zápisu, je v pruhu tlačítko "Aktualizovat teď":
-  stáhne nový soubor, zkontroluje ho, appku zavře a malý skript soubor vymění a novou verzi spustí.
-  Předchozí verze zůstane vedle jako DochazkaMOP_predchozi.exe (pro návrat zpět).
+  stáhne nový soubor, zkontroluje ho a přímo v programu ho vymění za běžící (Windows dovolí přejmenovat
+  spuštěný soubor). Žádný skript ani PowerShell se nespouští a nic se samo nerestartuje: po výměně stačí
+  Docházku zavřít a spustit znovu. Předchozí verze zůstane vedle jako DochazkaMOP_predchozi.exe.
+  (Dřívější verze používala skrytý PowerShell; Kaspersky ho vyhodnotil jako podezřelé chování.)
 - Jinde (spuštění z Pythonu, složka bez práva zápisu, jiný systém) je v pruhu "Stáhnout" (otevře prohlížeč).
 - Bez internetu, při chybě GitHubu nebo s nevyplněným repozitářem se appka chová úplně normálně.
 
@@ -12,16 +14,15 @@ Použití v dochazka_app.py (beze změny):
     from update_check import UpdateNotifier
     self.update_notifier = UpdateNotifier(self, UPDATE_REPO, APP_VERSION, before=self.notebook)
 """
-import base64
 import hashlib
 import http.client
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 import urllib.error
 import urllib.request
@@ -33,6 +34,7 @@ TIMEOUT_SECONDS = 6
 MAX_POLLS = 60                                  # 60 x 0,5 s = nejvýš ~30 s čekání na odpověď GitHubu
 ALLOWED_DOWNLOAD_PREFIX = "https://github.com/"  # stahujeme a otevíráme jen odkazy na GitHub
 USER_AGENT = "DochazkaMOP-update-check"
+SELF_UPDATE_ENABLED = True       # False = jen upozornění a ruční stažení (tlačítko Aktualizovat teď se nezobrazí)
 
 
 # --------------------------------------------------------------------------- verze
@@ -90,7 +92,7 @@ def _dir_writable(folder):
 
 def can_self_update():
     """Samoaktualizace jde jen ve Windows, v sestaveném .exe, které leží ve složce s právem zápisu."""
-    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+    if not SELF_UPDATE_ENABLED or sys.platform != "win32" or not getattr(sys, "frozen", False):
         return False
     return _dir_writable(Path(sys.executable).parent)
 
@@ -133,79 +135,31 @@ def verify_download(path, result, expected_digest=""):
         raise DownloadError("Kontrolní součet staženého souboru nesouhlasí s tím, který uvádí GitHub.")
 
 
-def _ps(text):
-    """Text jako řetězec v jednoduchých uvozovkách pro PowerShell."""
-    return "'" + str(text).replace("'", "''") + "'"
+def swap_files(exe, new_path, backup):
+    """Vymění program: běžící soubor se přejmenuje na `backup` a na jeho místo přijde `new_path`.
+    Když se druhý krok nezdaří, původní soubor se vrátí zpátky."""
+    exe, new_path, backup = Path(exe), Path(new_path), Path(backup)
+    if backup.exists():
+        backup.unlink()
+    os.replace(str(exe), str(backup))            # přejmenovat běžící .exe Windows dovolí
+    try:
+        os.replace(str(new_path), str(exe))
+    except OSError:
+        os.replace(str(backup), str(exe))
+        raise
 
 
-def build_updater_script(pid, old, new, backup, log):
-    """PowerShell skript: počká na ukončení appky, vymění soubor (se zálohou) a spustí novou verzi."""
-    return f"""$ErrorActionPreference = 'Stop'
-$appPid = {int(pid)}
-$old = {_ps(old)}
-$new = {_ps(new)}
-$backup = {_ps(backup)}
-$log = {_ps(log)}
-function Write-Log($text) {{
-    try {{ Add-Content -LiteralPath $log -Encoding UTF8 -Value ((Get-Date -Format 's') + '  ' + $text) }} catch {{ }}
-}}
-Write-Log 'Aktualizace: začátek'
-$deadline = (Get-Date).AddSeconds(120)
-while ((Get-Process -Id $appPid -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) {{
-    Start-Sleep -Milliseconds 300
-}}
-if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {{
-    Write-Log 'Aplikace stále běží, výměna se neprovede.'
-    exit 1
-}}
-Start-Sleep -Seconds 2
-$done = $false
-for ($i = 0; ($i -lt 40) -and (-not $done); $i++) {{
-    try {{
-        if (Test-Path -LiteralPath $backup) {{ Remove-Item -LiteralPath $backup -Force }}
-        Move-Item -LiteralPath $old -Destination $backup -Force
-        try {{
-            Move-Item -LiteralPath $new -Destination $old -Force
-        }} catch {{
-            Move-Item -LiteralPath $backup -Destination $old -Force
-            throw
-        }}
-        $done = $true
-    }} catch {{
-        Write-Log ('Pokus ' + ($i + 1) + ': ' + $_.Exception.Message)
-        Start-Sleep -Milliseconds 500
-    }}
-}}
-if (-not $done) {{
-    Write-Log 'Výměna se nezdařila, zůstává původní verze.'
-    exit 1
-}}
-Write-Log 'Soubor vyměněn, spouštím novou verzi.'
-Start-Process -FilePath $old -WorkingDirectory (Split-Path -Parent $old)
-"""
-
-
-def clean_environment():
-    """Prostředí pro nový proces: bez vnitřních proměnných PyInstalleru, ať se nová verze rozbalí od nuly."""
-    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("_PYI") and k.upper() != "_MEIPASS2"}
-    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    return env
-
-
-def launch_updater(script):
-    """Spustí skript na pozadí (bez okna) tak, aby přežil zavření appky."""
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    system_root = os.environ.get("SystemRoot", r"C:\Windows")
-    powershell = os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-    if not os.path.exists(powershell):
-        powershell = "powershell.exe"
-    flags = 0x08000000 | 0x00000200          # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen(
-        [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
-        creationflags=flags, env=clean_environment(), close_fds=True,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+def install_with_retry(exe, new_path, backup, attempts=6, delay=0.5):
+    """Antivir může nový soubor na chvíli podržet, proto několik pokusů."""
+    last = None
+    for _ in range(attempts):
+        try:
+            swap_files(exe, new_path, backup)
+            return
+        except OSError as exc:
+            last = exc
+            time.sleep(delay)
+    raise DownloadError(f"Soubor se nepodařilo nahradit: {last}")
 
 
 # --------------------------------------------------------------------------- okno aplikace
@@ -281,7 +235,7 @@ class UpdateNotifier:
         banner = tk.Frame(self.root, bg=bg, highlightbackground="#ffe69c", highlightthickness=1)
         if auto:
             text = (f"Je dostupná nová verze {self._clean(info['version'])} (používáte {self.current}). "
-                    "Tlačítko Aktualizovat teď program stáhne, sám se restartuje a data zůstanou beze změny.")
+                    "Tlačítko Aktualizovat teď novou verzi stáhne a nainstaluje. Poté Docházku zavřete a spusťte znovu, data zůstanou beze změny.")
         else:
             text = (f"Je dostupná nová verze {self._clean(info['version'])} (používáte {self.current}). "
                     "Po stažení Docházku zavřete a nahraďte jí starý soubor DochazkaMOP.exe.")
@@ -318,10 +272,11 @@ class UpdateNotifier:
         if not messagebox.askyesno(
                 "Aktualizace",
                 f"Nainstalovat verzi {self._clean(info['version'])}?\n\n"
-                "Program se stáhne, zavře a sám se znovu spustí. Rozepsané údaje se uloží, data zůstanou beze změny. "
-                "Předchozí verze zůstane vedle jako DochazkaMOP_predchozi.exe."):
+                "Nová verze se stáhne a nahradí současný program. Potom Docházku stačí zavřít a spustit znovu. "
+                "Data zůstanou beze změny a předchozí verze zůstane vedle jako DochazkaMOP_predchozi.exe."):
             return
         exe = Path(sys.executable)
+        backup = exe.with_name(f"{exe.stem}_predchozi{exe.suffix}")
         new_path = exe.with_name(f"{exe.stem}.update{exe.suffix}")
         part = new_path.with_name(new_path.name + ".part")
         for leftover in (new_path, part):
@@ -340,6 +295,7 @@ class UpdateNotifier:
                 result = download_asset(info["download"], str(part), progress, lambda: state["cancelled"])
                 verify_download(str(part), result, info.get("digest", ""))
                 os.replace(str(part), str(new_path))
+                install_with_retry(exe, new_path, backup)
             except DownloadCancelled:
                 state["cancelled"] = True
             except Exception as exc:
@@ -388,26 +344,21 @@ class UpdateNotifier:
                 except OSError:
                     pass
             if state["error"]:
-                messagebox.showerror(
-                    "Aktualizace",
-                    f"Aktualizace se nezdařila:\n{state['error']}\n\nProgram zůstává beze změny. "
-                    "Novou verzi můžete stáhnout ručně tlačítkem Stáhnout ručně.")
+                exe = Path(sys.executable)
+                if exe.exists():
+                    tail = "Program zůstává beze změny. Novou verzi můžete stáhnout ručně tlačítkem Stáhnout ručně."
+                else:
+                    tail = f"Původní program najdete pod názvem {exe.stem}_predchozi{exe.suffix}."
+                messagebox.showerror("Aktualizace", f"Aktualizace se nezdařila:\n{state['error']}\n\n{tail}")
             return
-        self._apply_update(new_path)
+        self._after_install(info)
 
-    def _apply_update(self, new_path):
-        exe = Path(sys.executable)
-        backup = exe.with_name(f"{exe.stem}_predchozi{exe.suffix}")
-        log = os.path.join(tempfile.gettempdir(), "dochazka_aktualizace.log")
-        try:
-            launch_updater(build_updater_script(os.getpid(), exe, new_path, backup, log))
-        except Exception as exc:
-            try:
-                Path(new_path).unlink()
-            except OSError:
-                pass
-            messagebox.showerror("Aktualizace", f"Aktualizaci se nepodařilo spustit:\n{exc}\n\nProgram zůstává beze změny.")
-            return
-        # Appka se zavře běžným způsobem (uloží rozepsané, udělá zálohu databáze, zavře ji).
-        quit_app = getattr(self.root, "on_close", None) or self.root.destroy
-        quit_app()
+    def _after_install(self, info):
+        self.hide_banner()
+        if messagebox.askyesno(
+                "Aktualizace nainstalována",
+                f"Verze {self._clean(info['version'])} je nainstalována.\n\n"
+                "Aby se začala používat, Docházku zavřete a spusťte znovu (ikonou na ploše nebo souborem DochazkaMOP.exe).\n\n"
+                "Zavřít program teď?"):
+            quit_app = getattr(self.root, "on_close", None) or self.root.destroy
+            quit_app()
